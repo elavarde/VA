@@ -1,83 +1,69 @@
-name: va_dev
-
-
-networks: { va_net: {} }
-volumes:
-  va_dbdata:
-    external: true
-  va_chromadata:            # +++ nouveau volume persistant
-    external: true
-
 services:
-  db:
+  mysql:
+    platform: linux/arm64/v8
     image: mysql:8.0
-    platform: linux/amd64
-    restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE}
-    volumes:
-      - va_dbdata:/var/lib/mysql
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    command: ["--default-authentication-plugin=mysql_native_password","--innodb_flush_log_at_trx_commit=2"]
+    volumes: 
+      - va_mysql_data_dev:/var/lib/mysql
+      - ./_db:/docker-entrypoint-initdb.d:ro
+    ports:
+    - "3306:3306"
     healthcheck:
-      test: ["CMD-SHELL","mysqladmin ping -h 127.0.0.1 -uroot -p$${MYSQL_ROOT_PASSWORD} || exit 1"]
+      test: ["CMD","mysqladmin","ping","-h","localhost","-p${MYSQL_ROOT_PASSWORD}"]
       interval: 10s
-      timeout: 5s
-      retries: 30
-    networks: [va_net]
+      retries: 10
+
+  # chroma:
+  #   platform: linux/amd64
+  #   image: ghcr.io/chroma-core/chroma:latest
+  #   environment:
+  #     - IS_PERSISTENT=TRUE
+  #   volumes:
+  #     - va_chroma_data_dev:/data
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/api/v1/heartbeat || exit 1"]
+  #     interval: 10s
+  #     timeout: 3s
+  #     retries: 30
 
   api:
     build:
       context: ./outil_veille_api
       dockerfile: Dockerfile.api
       target: production
-    working_dir: /app
-    depends_on:
-      db:
-        condition: service_healthy
-    env_file: .env
+    ports:
+      - "8000:8000"
     environment:
+      DATABASE_URL: mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE}
       NODE_ENV: development
-      PORT: ${API_PORT}
-      DATABASE_URL: mysql://root:${MYSQL_ROOT_PASSWORD}@db:3306/${MYSQL_DATABASE}
-    command: sh -lc "npx nodemon src/index.js --watch src --ext js,json"
+    depends_on:
+      mysql:
+        condition: service_healthy
     volumes:
-      - ./outil_veille_api:/app
-    expose:
-      - "${API_PORT}"
-    networks: [va_net]
+      - ./outil_veille_api/src:/app/src
+      - ./outil_veille_api/routes:/app/routes
+      - ./outil_veille_api/services:/app/services
+      - ./outil_veille_api/config:/app/config
 
-  vite:
+  front:
+    platform: linux/arm64/v8
     image: node:20-alpine
     working_dir: /app
-    environment:
-      NODE_ENV: development
-    command: sh -lc "npm install && npm run dev -- --host 0.0.0.0 --port 5173"
     volumes:
       - ./outil_veille_app:/app
-    expose: ["5173"]
-    networks: [va_net]
-
-  nginx:
-    image: nginx:alpine
+    environment:
+      VITE_PUBLIC_API_URL: http://localhost:8000
+    command: sh -c "npm ci || npm install && npm run dev -- --host"
+    ports:
+      - "5173:5173"
     depends_on:
-      api:  { condition: service_started }
-      vite: { condition: service_started }
-    ports: ["${NGINX_PORT}:80"]
-    volumes:
-      - ./nginx.dev.conf:/etc/nginx/conf.d/default.conf:ro
-    networks: [va_net]
+      - api
 
-  chroma:
-    image: ghcr.io/chroma-core/chroma:latest
-    container_name: va_chroma_dev
-    command: ["chroma", "run", "--host", "0.0.0.0", "--port", "8001", "--path", "/data"]
-    volumes:
-      - va_chromadata:/data
-    expose:
-      - "8001"
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8001/api/v1/heartbeat"]
-      interval: 10s
-      timeout: 5s
-      retries: 30
-    networks: [va_net]
+volumes:
+  va_mysql_data_dev:
+  # va_chroma_data_dev:
