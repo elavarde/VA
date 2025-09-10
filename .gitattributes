@@ -1,0 +1,12 @@
+@'
+* text=auto
+*.ps1   text eol=crlf
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+*.sh    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.dockerignore text eol=lf
+Dockerfile      text eol=lf
+Dockerfile.*    text eol=lf
+'@ | Out-File -Encoding utf8 .gitattributes

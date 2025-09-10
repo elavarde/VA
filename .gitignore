@@ -1,0 +1,27 @@
+# Node / pnpm
+node_modules/
+pnpm-lock.yaml
+**/.pnpm-store/
+**/.vite/
+**/.vite-temp/
+
+# Builds
+outil_veille_app/dist/
+front_dist/
+**/app-dist/
+
+# Envs & secrets
+.env
+**/.env
+**/.env.*.local
+**/.package-lock.json
+
+# Docker
+_trash/
+traefik_letsencrypt/
+*.log
+
+# DB & vecteurs (on NE commit PAS les données)
+outil_veille_api/_db/backup/
+va_mysql_data_*/
+va_chroma_data_*/

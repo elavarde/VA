@@ -1,0 +1,11 @@
+node_modules
+.pnpm
+.pnpm-store
+dist
+build
+coverage
+.env
+.env.*
+.git
+$lf = (Get-Content .dockerignore -Raw) -replace "`r`n","`n"
+[IO.File]::WriteAllText(".dockerignore", $lf)
