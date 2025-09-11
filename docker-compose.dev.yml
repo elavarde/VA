@@ -12,24 +12,27 @@ services:
       - va_mysql_data_dev:/var/lib/mysql
       - ./_db:/docker-entrypoint-initdb.d:ro
     ports:
-    - "3306:3306"
+      - "3306:3306"
     healthcheck:
-      test: ["CMD","mysqladmin","ping","-h","localhost","-p${MYSQL_ROOT_PASSWORD}"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD}"]
       interval: 10s
       retries: 10
 
-  # chroma:
-  #   platform: linux/amd64
-  #   image: ghcr.io/chroma-core/chroma:latest
-  #   environment:
-  #     - IS_PERSISTENT=TRUE
-  #   volumes:
-  #     - va_chroma_data_dev:/data
-  #   healthcheck:
-  #     test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/api/v1/heartbeat || exit 1"]
-  #     interval: 10s
-  #     timeout: 3s
-  #     retries: 30
+  chroma:
+    platform: linux/amd64
+    image: ghcr.io/chroma-core/chroma:latest
+    environment:
+      - IS_PERSISTENT=TRUE
+    volumes:
+      - va_chroma_data_dev:/data
+    ports:
+      - "8001:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8000/api/v2/heartbeat || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
 
   api:
     build:
@@ -42,8 +45,8 @@ services:
       DATABASE_URL: mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE}
       NODE_ENV: development
     depends_on:
-      mysql:
-        condition: service_healthy
+      - mysql
+      - chroma
     volumes:
       - ./outil_veille_api/src:/app/src
       - ./outil_veille_api/routes:/app/routes
@@ -66,4 +69,4 @@ services:
 
 volumes:
   va_mysql_data_dev:
-  # va_chroma_data_dev:
+  va_chroma_data_dev:
