@@ -26,3 +26,7 @@ outil_veille_api/_db/backup/
 va_mysql_data_*/
 va_chroma_data_*/
 *.sql
+# Hugging Face models cache
+node_modules/
+.cache/
+models/
