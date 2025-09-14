@@ -4,10 +4,11 @@ services:
     image: mysql:8.0
     env_file: .env
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_ROOT_PASSWORD: veillepass
       MYSQL_DATABASE: ${MYSQL_DATABASE}
-      MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_USER: ${MYSQL_APP_USER}
+      MYSQL_PASSWORD: ${MYSQL_APP_PASSWORD}
+      MYSQL_HOST: $(MYSQL_HOST)
     command: ["--default-authentication-plugin=mysql_native_password", "--innodb_flush_log_at_trx_commit=2"]
     volumes:
       - va_mysql_data_dev:/var/lib/mysql
@@ -46,7 +47,7 @@ services:
     build:
       context: ./outil_veille_api
       dockerfile: Dockerfile.api
-      target: production
+      target: development
     env_file: .env
     ports:
       - "${API_PORT}:8000"
@@ -54,6 +55,11 @@ services:
       NODE_ENV: development
       GEMINI_API_KEY: ${GEMINI_API_KEY}
       CHROMA_URL: http://chroma:8000
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_APP_USER}
+      MYSQL_PASSWORD: ${MYSQL_APP_PASSWORD}
     depends_on:
       - mysql
       - chroma
@@ -63,6 +69,8 @@ services:
       - ./outil_veille_api/routes:/app/routes
       - ./outil_veille_api/services:/app/services
       - ./outil_veille_api/config:/app/config
+      - /app/node_modules
+    command: npx nodemon src/index.js
     networks:
       - veille_net
 
@@ -73,6 +81,7 @@ services:
     env_file: .env
     volumes:
       - ./outil_veille_app:/app
+      - /app/node_modules
     environment:
       VITE_PUBLIC_API_URL: http://localhost:${API_PORT}
     command: sh -c "npm ci || npm install && npm run dev -- --host"
