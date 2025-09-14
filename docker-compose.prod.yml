@@ -1,105 +1,150 @@
 services:
   traefik:
     image: traefik:v3
+    platform: linux/amd64
     command:
-      - --providers.docker=true
       - --entrypoints.web.address=:80
       - --entrypoints.websecure.address=:443
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
       - --certificatesresolvers.le.acme.httpchallenge=true
       - --certificatesresolvers.le.acme.httpchallenge.entrypoint=web
       - --certificatesresolvers.le.acme.email=${LETSENCRYPT_EMAIL}
       - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
-    ports: ["80:80","443:443"]
+      - --api.dashboard=true
+    ports:
+      - "80:80"
+      - "443:443"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - traefik_letsencrypt:/letsencrypt
+      - ./acme.json:/letsencrypt/acme.json
+    networks:
+      - va_net
     restart: unless-stopped
+
 
   mysql:
     image: mysql:8.0
+    platform: linux/amd64
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE}
       MYSQL_USER: ${MYSQL_USER}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-    command: ["--default-authentication-plugin=mysql_native_password","--innodb_flush_log_at_trx_commit=1"]
+    command:
+      - --default-authentication-plugin=mysql_native_password
+      - --innodb_flush_log_at_trx_commit=1
     volumes:
       - va_mysql_data_prod:/var/lib/mysql
     healthcheck:
-      test: ["CMD","mysqladmin","ping","-h","localhost","-p${MYSQL_ROOT_PASSWORD}"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD}"]
       interval: 10s
       retries: 10
+    networks:
+      - va_net
     restart: always
 
   chroma:
+    platform: linux/amd64
     image: ghcr.io/chroma-core/chroma:latest
-    environment: [ "IS_PERSISTENT=TRUE" ]
+    environment:
+      - IS_PERSISTENT=TRUE
     volumes:
-      - va_chroma_data_prod:${CHROMA_PERSIST}
+      - va_va_chroma_data_dev:/data
+    ports:
+      - "8000:8000"
     healthcheck:
-      test: ["CMD","wget","-qO-","http://localhost:8000/api/v1/heartbeat"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8000/api/v2/heartbeat || exit 1"]
       interval: 10s
-      retries: 20
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+    networks:
+      - va_net
     restart: always
 
   api:
-    image: your-registry/va-api:latest
+    build:
+      context: ./outil_veille_api
+      dockerfile: Dockerfile.api
+      target: production
     environment:
-      DATABASE_URL: mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE}
+      DATABASE_URL: ${DATABASE_URL}
       CHROMA_URL: http://chroma:8000
       NODE_ENV: production
       PORT: ${API_PORT}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+      GOOGLE_CSE_ID: ${GOOGLE_CSE_ID}
     depends_on:
-      mysql: { condition: service_healthy }
-      chroma: { condition: service_healthy }
-    command: sh -c "npx prisma migrate deploy && node dist/server.js"
+      - mysql
+      - chroma
+    command: sh -c "npx prisma migrate deploy --schema=prisma/schema.prisma && node src/index.js"
+
     labels:
       - traefik.enable=true
       - traefik.http.routers.api.rule=Host(`api.${DOMAIN_PROD}`)
       - traefik.http.routers.api.entrypoints=websecure
       - traefik.http.routers.api.tls.certresolver=le
       - traefik.http.services.api.loadbalancer.server.port=${API_PORT}
+    networks:
+      - va_net
     restart: always
 
-  front:
-    image: nginx:alpine
-    volumes:
-      - ./front_dist:/usr/share/nginx/html:ro
+  app:
+    build:
+      context: .
+      dockerfile: outil_veille_app/Dockerfile.app
+    platform: linux/amd64
     labels:
       - traefik.enable=true
       - traefik.http.routers.front.rule=Host(`app.${DOMAIN_PROD}`)
       - traefik.http.routers.front.entrypoints=websecure
       - traefik.http.routers.front.tls.certresolver=le
       - traefik.http.services.front.loadbalancer.server.port=80
+    networks:
+      - va_net
     restart: always
 
-  pyworker:
-    image: your-registry/va-pyworker:latest
-    environment:
-      CHROMA_URL: http://chroma:8000
-    depends_on:
-      chroma: { condition: service_healthy }
-    restart: always
+  # pyworker:
+  #   build:
+  #     context: ./outil_veille_pyworker
+  #     dockerfile: Dockerfile.pyworker
+  #   environment:
+  #     CHROMA_URL: http://chroma:8000
+  #   depends_on:
+  #     chroma:
+  #       condition: service_healthy
+  #   networks:
+  #     - va_net
+  #   restart: always
 
-  backup:
-    image: restic/restic:latest
-    environment:
-      RESTIC_REPOSITORY: ${RESTIC_REPOSITORY}
-      RESTIC_PASSWORD: ${RESTIC_PASSWORD}
-      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
-      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
-      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION}
-    volumes:
-      - va_mysql_data_prod:/data/mysql:ro
-      - va_chroma_data_prod:${CHROMA_PERSIST}:ro
-    entrypoint: ["/bin/sh","-c"]
-    command: >
-      'restic backup /data &&
-       restic forget --keep-daily 7 --keep-weekly 4 --keep-monthly 6 --prune &&
-       sleep 3600'
-    restart: unless-stopped
+  # backup:
+  #   image: restic/restic:latest
+  #   environment:
+  #     RESTIC_REPOSITORY: ${RESTIC_REPOSITORY}
+  #     RESTIC_PASSWORD: ${RESTIC_PASSWORD}
+  #     AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+  #     AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+  #     AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION}
+  #   volumes:
+  #     - va_mysql_data_prod:/data/mysql:ro
+  #     - va_chroma_data_prod:${CHROMA_PERSIST}:ro
+  #   entrypoint: ["/bin/sh", "-c"]
+  #   command: >
+  #     'restic backup /data &&
+  #      restic forget --keep-daily 7 --keep-weekly 4 --keep-monthly 6 --prune &&
+  #      sleep 3600'
+  #   networks:
+  #     - va_net
+  #   restart: unless-stopped
 
 volumes:
   traefik_letsencrypt:
   va_mysql_data_prod:
-  va_chroma_data_prod:
+  va_va_chroma_data_dev:
+    external: true
+
+networks:
+  va_net:
+    driver: bridge

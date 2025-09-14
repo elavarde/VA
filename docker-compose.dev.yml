@@ -2,72 +2,90 @@ services:
   mysql:
     platform: linux/arm64/v8
     image: mysql:8.0
+    env_file: .env
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE}
       MYSQL_USER: ${MYSQL_USER}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-    command: ["--default-authentication-plugin=mysql_native_password","--innodb_flush_log_at_trx_commit=2"]
-    volumes: 
+    command: ["--default-authentication-plugin=mysql_native_password", "--innodb_flush_log_at_trx_commit=2"]
+    volumes:
       - va_mysql_data_dev:/var/lib/mysql
       - ./_db:/docker-entrypoint-initdb.d:ro
     ports:
-      - "3306:3306"
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD}"]
-      interval: 10s
-      retries: 10
+      - "${MYSQL_PORT:-3306}:3306"
+    # healthcheck:
+    #   test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD}"]
+    #   interval: 10s
+    #   retries: 10
+    networks:
+      - veille_net
 
   chroma:
     platform: linux/amd64
     image: ghcr.io/chroma-core/chroma:latest
+    env_file: .env
     environment:
       - IS_PERSISTENT=TRUE
+      - CHROMA_SERVER_CORS_ALLOW_ORIGINS=*
+      - CHROMA_SERVER_HOST=0.0.0.0
     volumes:
       - va_chroma_data_dev:/data
     ports:
       - "8001:8000"
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8000/api/v2/heartbeat || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 40s
+    # healthcheck:
+    #   test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/api/v2/heartbeat || exit 1"]
+    #   interval: 5s
+    #   timeout: 2s
+    #   retries: 10
+    #   start_period: 40s
+    networks:
+      - veille_net
 
   api:
     build:
       context: ./outil_veille_api
       dockerfile: Dockerfile.api
       target: production
+    env_file: .env
     ports:
-      - "8000:8000"
+      - "${API_PORT}:8000"
     environment:
-      DATABASE_URL: mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE}
       NODE_ENV: development
       GEMINI_API_KEY: ${GEMINI_API_KEY}
+      CHROMA_URL: http://chroma:8000
     depends_on:
       - mysql
       - chroma
     volumes:
       - ./outil_veille_api/src:/app/src
+      - ./outil_veille_api/prisma:/app/prisma
       - ./outil_veille_api/routes:/app/routes
       - ./outil_veille_api/services:/app/services
       - ./outil_veille_api/config:/app/config
+    networks:
+      - veille_net
 
   front:
     platform: linux/arm64/v8
     image: node:20-alpine
     working_dir: /app
+    env_file: .env
     volumes:
       - ./outil_veille_app:/app
     environment:
-      VITE_PUBLIC_API_URL: http://localhost:8000
+      VITE_PUBLIC_API_URL: http://localhost:${API_PORT}
     command: sh -c "npm ci || npm install && npm run dev -- --host"
     ports:
-      - "5173:5173"
+      - "${FRONT_PORT}:5173"
     depends_on:
       - api
+    networks:
+      - veille_net
 
 volumes:
   va_mysql_data_dev:
   va_chroma_data_dev:
+
+networks:
+  veille_net:
