@@ -1,0 +1,100 @@
+services:
+  outil_veille_api:
+    build:
+      context: ./outil_veille_api
+      dockerfile: Dockerfile.api
+      target: development
+    container_name: outil_veille_api
+    platform: linux/arm64/v8
+    ports:
+      - "${API_PORT:-8000}:8000"
+    env_file:
+      - ./outil_veille_api/.env
+    environment:
+      NODE_ENV: development
+    volumes:
+      - ./outil_veille_api/src:/app/src
+      - ./outil_veille_api/prisma:/app/prisma
+      - ./outil_veille_api/routes:/app/routes
+      - ./outil_veille_api/services:/app/services
+      - ./outil_veille_api/config:/app/config
+      - ./bibliotheque_images:/app/bibliotheque_images
+      - "C:/Users/elava/OneDrive/Agence Impakt/09_Veille:/app/pdf"
+      - /app/node_modules
+    command: npx nodemon src/index.js
+    depends_on:
+      mysql:
+        condition: service_healthy
+      chroma:
+        condition: service_started
+    networks:
+      - veille_net
+
+  outil_veille_app:
+    build:
+      context: ./outil_veille_app
+      dockerfile: Dockerfile.app
+      target: development
+    container_name: outil_veille_app
+    platform: linux/arm64/v8
+    working_dir: /app
+    env_file: ./outil_veille_api/.env
+    volumes:
+      - ./outil_veille_app:/app
+      - /app/node_modules
+    environment:
+      VITE_PUBLIC_API_URL: http://localhost:${API_PORT:-8000}
+    command: sh -c "npm ci || npm install && npm run dev -- --host"
+    ports:
+      - "${FRONT_PORT:-5173}:5173"
+    depends_on:
+      - outil_veille_api
+    networks:
+      - veille_net
+
+  mysql:
+    image: mysql:8.0
+    container_name: outil_veille_db
+    platform: linux/arm64/v8
+    restart: always
+    env_file: ./outil_veille_api/.env
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_APP_USER}
+      MYSQL_PASSWORD: ${MYSQL_APP_PASSWORD}
+    command: ["--default-authentication-plugin=mysql_native_password", "--innodb_flush_log_at_trx_commit=2"]
+    volumes:
+      - va_mysql_data_dev:/var/lib/mysql
+      - ./_db:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      retries: 10
+    networks:
+      - veille_net
+
+  chroma:
+    image: ghcr.io/chroma-core/chroma:latest
+    container_name: outil_veille_chroma
+    platform: linux/amd64
+    env_file: ./outil_veille_api/.env
+    environment:
+      - IS_PERSISTENT=TRUE
+      - CHROMA_SERVER_CORS_ALLOW_ORIGINS=["*"]
+      - CHROMA_SERVER_HOST=0.0.0.0
+    volumes:
+      - ./outil_veille_api/_db/chroma:/data
+    ports:
+      - "8001:8000"
+    networks:
+      - veille_net
+
+volumes:
+  va_mysql_data_dev:
+  va_chroma_data_dev:
+
+networks:
+  veille_net:

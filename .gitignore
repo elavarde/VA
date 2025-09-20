@@ -1,6 +1,8 @@
 # Node / pnpm
 node_modules/
 pnpm-lock.yaml
+package-lock.json
+yarn.lock
 **/.pnpm-store/
 **/.vite/
 **/.vite-temp/
@@ -14,19 +16,36 @@ front_dist/
 .env
 **/.env
 **/.env.*.local
-**/.package-lock.json
 
 # Docker
 _trash/
 traefik_letsencrypt/
+docker-compose.override.yml
 *.log
+logs/
+*.pid
+*.seed
+*.out
+*.err
 
 # DB & vecteurs (on NE commit PAS les données)
 outil_veille_api/_db/backup/
 va_mysql_data_*/
 va_chroma_data_*/
 *.sql
+
 # Hugging Face models cache
-node_modules/
 .cache/
 models/
+
+# Données persistantes
+bibliotheque_images/
+outil_veille_api/prisma/migrations/
+!/outil_veille_api/prisma/schema.prisma
+
+# IDE & OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
