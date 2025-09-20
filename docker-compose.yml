@@ -12,6 +12,7 @@ services:
       - ./outil_veille_api/.env
     environment:
       NODE_ENV: development
+      VITE_PUBLIC_API_URL: http://outil_veille_api:8000
     volumes:
       - ./outil_veille_api/src:/app/src
       - ./outil_veille_api/prisma:/app/prisma
