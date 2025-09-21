@@ -19,7 +19,7 @@ services:
       - ./outil_veille_api/routes:/app/routes
       - ./outil_veille_api/services:/app/services
       - ./outil_veille_api/config:/app/config
-      - ./bibliotheque_images:/app/bibliotheque_images
+      - "C:/Users/elava/VA/bibliotheque_images:/app/bibliotheque_images"
       - "C:/Users/elava/OneDrive/Agence Impakt/09_Veille:/app/pdf"
       - /app/node_modules
     command: npx nodemon src/index.js
